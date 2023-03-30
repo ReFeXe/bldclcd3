@@ -23,6 +23,7 @@
 #include "hw.h"
 #include "packet.h"
 #include "commands.h"
+#include "lcd3.h"
 
 // Settings
 
@@ -101,8 +102,11 @@ static void process_packet(unsigned char *data, unsigned int len, unsigned int p
 	if (port_number >= UART_NUMBER) {
 		return;
 	}
-
-	commands_process_packet(data, len, send_functions[port_number]);
+	#ifdef LCD3_ENABLE
+	 lcd3_process_packet(data, len, send_functions[port_number]);
+	#else
+	 commands_process_packet(data, len, send_functions[port_number]);
+	#endif
 }
 
 void app_uartcomm_initialize(void) {
@@ -190,6 +194,21 @@ void app_uartcomm_send_packet(unsigned char *data, unsigned int len, UART_PORT p
 	chMtxUnlock(&send_mutex[port_number]);
 }
 
+void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len, UART_PORT port_number) {
+	if (port_number >= UART_NUMBER) {
+		return;
+	}
+
+	if (!send_mutex_init_done[port_number]) {
+		chMtxObjectInit(&send_mutex[port_number]);
+		send_mutex_init_done[port_number] = true;
+	}
+
+	chMtxLock(&send_mutex[port_number]);
+	packet_send_raw_packet(data, len, &packet_state[port_number]);
+	chMtxUnlock(&send_mutex[port_number]);
+}
+
 void app_uartcomm_configure(uint32_t baudrate, bool enabled, UART_PORT port_number) {
 	if (port_number >= UART_NUMBER) {
 		return;
@@ -218,6 +237,9 @@ void app_uartcomm_configure(uint32_t baudrate, bool enabled, UART_PORT port_numb
 	}
 }
 
+extern void lcd3_process_byte(res, &packet_state[port_number]);
+
+
 static THD_FUNCTION(packet_process_thread, arg) {
 	(void)arg;
 
@@ -238,7 +260,11 @@ static THD_FUNCTION(packet_process_thread, arg) {
 				if (uart_is_running[port_number]) {
 					msg_t res = sdGetTimeout(serialPortDriverRx[port_number], TIME_IMMEDIATE);
 					if (res != MSG_TIMEOUT) {
-						packet_process_byte(res, &packet_state[port_number]);
+						#ifdef LCD3_ENABLE
+							lcd3_process_byte(res, &packet_state[port_number]);
+						#else
+							packet_process_byte(res, &packet_state[port_number]);
+						#endif
 						rx = true;
 					}
 				}

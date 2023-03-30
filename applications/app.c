@@ -119,9 +119,9 @@ void app_set_configuration(app_configuration *conf) {
 			app_uartcomm_start(UART_PORT_COMM_HEADER);
 			break;
 
-		case APP_NUNCHUK:
-			app_nunchuk_start();
-			break;
+		//case APP_NUNCHUK:
+			//app_nunchuk_start();
+			//break;
 
 		case APP_BALANCE:
 			app_balance_start();
@@ -140,16 +140,17 @@ void app_set_configuration(app_configuration *conf) {
 			app_pas_start(false);
 			break;
 
-		case APP_NRF:
-			if (!conf_general_permanent_nrf_found) {
-				nrf_driver_init();
-				rfhelp_restart();
-			}
-			break;
+		//case APP_NRF:
+			//if (!conf_general_permanent_nrf_found) {
+				//nrf_driver_init();
+				//rfhelp_restart();
+			//}
+			//break;
 
 		case APP_CUSTOM:
 #ifdef APP_CUSTOM_TO_USE
 			hw_stop_i2c();
+			app_uartcomm_start();
 			app_custom_start();
 #endif
 			break;
@@ -170,7 +171,7 @@ void app_set_configuration(app_configuration *conf) {
 	app_custom_configure(&appconf);
 #endif
 
-	rfhelp_update_conf(&appconf.app_nrf_conf);
+//	rfhelp_update_conf(&appconf.app_nrf_conf);
 }
 
 /**

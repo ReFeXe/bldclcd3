@@ -47,5 +47,6 @@ void packet_init(void (*s_func)(unsigned char *data, unsigned int len),
 void packet_reset(PACKET_STATE_t *state);
 void packet_process_byte(uint8_t rx_data, PACKET_STATE_t *state);
 void packet_send_packet(unsigned char *data, unsigned int len, PACKET_STATE_t *state);
+void packet_send_raw_packet(unsigned char *data, unsigned int len, PACKET_STATE_t *state);
 
 #endif /* PACKET_H_ */

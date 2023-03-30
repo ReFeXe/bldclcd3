@@ -72,6 +72,21 @@ void packet_send_packet(unsigned char *data, unsigned int len, PACKET_STATE_t *s
 	}
 }
 
+void packet_send_raw_packet(unsigned char *data, unsigned int len, PACKET_STATE_t *state) {
+	if (len == 0 || len > PACKET_MAX_PL_LEN) {
+		return;
+	}
+
+	int b_ind = 0;
+
+	memcpy(state->tx_buffer + b_ind, data, len);
+	b_ind += len;
+
+	if (state->send_func) {
+		state->send_func(state->tx_buffer, b_ind);
+	}
+}
+
 void packet_process_byte(uint8_t rx_data, PACKET_STATE_t *state) {
 	unsigned int data_len = state->rx_write_ptr - state->rx_read_ptr;
 

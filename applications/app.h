@@ -62,6 +62,7 @@ void app_uartcomm_start(UART_PORT port_number);
 void app_uartcomm_stop(UART_PORT port_number);
 void app_uartcomm_configure(uint32_t baudrate, bool permanent_enabled, UART_PORT port_number);
 void app_uartcomm_send_packet(unsigned char *data, unsigned int len,  UART_PORT port_number);
+void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len,  UART_PORT port_number);
 
 void app_nunchuk_start(void);
 void app_nunchuk_stop(void);
