@@ -37,9 +37,6 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len))
 {
 	(void)len;
-
-	uint8_t torque_pulse = data[COMMAND_ID_TORQUE];
-	uint8_t torque_mode = data[COMMAND_ID_TORQUE_MODE] & (1 << 4);
 	
 	app_adc_set_torque_pulse((float)torque_pulse / 255);
 	app_adc_set_torque_mode(torque_mode);
@@ -98,11 +95,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	// bit 5: brake
 	// bit 6: -
 	// bit 7: -
-	sb[7] = 
-		((app_adc_get_throttle_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
-		((app_custom_get_cruise_state() > 0) ? MOVING_ANIMATION_CRUISE : 0) |
-		(torque_pulse ? MOVING_ANIMATION_ASSIST : 0) |
-		(app_custom_get_brake_state() ? MOVING_ANIMATION_BRAKE : 0);
+	sb[7] = 0;
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
 	sb[9] = (int8_t)(mc_interface_temp_motor_filtered() - 15.0f);	//b9: motor temperature +15
