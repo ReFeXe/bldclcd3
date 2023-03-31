@@ -43,7 +43,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	uint8_t batFlashing = 1;
 
 	//float l = mc_interface_get_battery_level(NULL);
-	l=0.5;
+	float l = 0.5;
 	
 	if (l > 0.6)
 		batteryLevel = 4;
