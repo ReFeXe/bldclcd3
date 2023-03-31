@@ -150,7 +150,7 @@ void app_set_configuration(app_configuration *conf) {
 		case APP_CUSTOM:
 #ifdef APP_CUSTOM_TO_USE
 			hw_stop_i2c();
-			app_uartcomm_start();
+			app_uartcomm_start(UART_PORT_COMM_HEADER);
 			app_custom_start();
 #endif
 			break;

@@ -237,7 +237,7 @@ void app_uartcomm_configure(uint32_t baudrate, bool enabled, UART_PORT port_numb
 	}
 }
 
-extern void lcd3_process_byte(res, &packet_state[port_number]);
+extern void lcd3_process_byte(uint8_t rx_data, PACKET_STATE_t *state);
 
 
 static THD_FUNCTION(packet_process_thread, arg) {

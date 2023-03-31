@@ -25,9 +25,6 @@ extern void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len, 
 
 #define LCD3_REPLY_PACKET_SIZE	12
 
-#define COMMAND_ID_TORQUE	0
-#define COMMAND_ID_TORQUE_MODE	2
-
 #define MOVING_ANIMATION_THROTTLE	(1 << 1)
 #define MOVING_ANIMATION_CRUISE		(1 << 3)
 #define MOVING_ANIMATION_ASSIST		(1 << 4)
@@ -38,33 +35,30 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 {
 	(void)len;
 	
-	app_adc_set_torque_pulse((float)torque_pulse / 255);
-	app_adc_set_torque_mode(torque_mode);
-	
 	uint8_t sb[LCD3_REPLY_PACKET_SIZE];
 	
-	int32_t ms = app_custom_get_speed_level();
-	if (ms > 0x10000)
-		ms = 0;
+	int32_t ms = 0;
 	
 	uint8_t batteryLevel;
 	uint8_t batFlashing = 0;
 
 	float l = mc_interface_get_battery_level(NULL);
-	if (l > 0.6)
-		batteryLevel = 4;
-	else if (l > 0.3)
-		batteryLevel = 3;
-	else if (l > 0.15)
-		batteryLevel = 2;
-	else if (l > 0.05)
-		batteryLevel = 1;
-	else
-	{
-		batteryLevel = 0;
-		if (l <= 0)
-			batFlashing = 1;
-	}
+	//if (l > 0.6)
+		//batteryLevel = 4;
+	//else if (l > 0.3)
+		//batteryLevel = 3;
+	//else if (l > 0.15)
+		//batteryLevel = 2;
+	//else if (l > 0.05)
+		//batteryLevel = 1;
+	//else
+	//{
+		//batteryLevel = 0;
+		//if (l <= 0)
+			//batFlashing = 1;
+	//}
+	
+	batteryLevel = 4;
 	
 	float w = (float)GET_INPUT_VOLTAGE() * mc_interface_read_reset_avg_input_current() / 12;
 	if (w < 0)
@@ -83,7 +77,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[2] = 0x30;
 	sb[3] = (ms >> 8) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
 	sb[4] = (ms >> 0) & 0xff;	//b4:
-	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
+	sb[5] = 0x22;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
 	sb[6] = 0;
 	
 	//b7: moving animation ()
@@ -108,7 +102,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	sb[6] = crc;
 	
-	app_uartcomm_send_raw_packet(sb, LCD3_REPLY_PACKET_SIZE);
+	app_uartcomm_send_raw_packet(sb,len,UART_PORT_COMM_HEADER);
 }
 
 #define LCD3_RX_PACKET_SIZE	13
@@ -116,14 +110,13 @@ static uint8_t buffer[LCD3_RX_PACKET_SIZE];
 
 void lcd3_process_byte(uint8_t rx_data, PACKET_STATE_t *state)
 {
-	(void)handler_num;
 	
 	memmove(buffer, &buffer[1], LCD3_RX_PACKET_SIZE - 1);
 	buffer[LCD3_RX_PACKET_SIZE - 1] = rx_data;
 	
 	if ((buffer[11] == 0x32) && (buffer[12] == 0x0e))
 	{
-		lcd3_process_packet(buffer, LCD3_RX_PACKET_SIZE);
+		lcd3_process_packet(buffer, LCD3_RX_PACKET_SIZE, UART_PORT_COMM_HEADER);
 	}
 }
 

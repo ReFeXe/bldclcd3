@@ -49,7 +49,6 @@
 
 #define LCD3_ENABLE
 #define SPEEDSENSOR_ENABLE
-#define APP_CUSTOM_TO_USE			"app_custom.c"
 
 // This is how to provide a custom UI in VESC Tool. The UI can be created and tested in the
 // scripting page, then the source files can be exported. The defines below use the exported
