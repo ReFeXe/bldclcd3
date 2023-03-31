@@ -43,22 +43,20 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	uint8_t batFlashing = 0;
 
 	float l = mc_interface_get_battery_level(NULL);
-	//if (l > 0.6)
-		//batteryLevel = 4;
-	//else if (l > 0.3)
-		//batteryLevel = 3;
-	//else if (l > 0.15)
-		//batteryLevel = 2;
-	//else if (l > 0.05)
-		//batteryLevel = 1;
-	//else
-	//{
-		//batteryLevel = 0;
-		//if (l <= 0)
-			//batFlashing = 1;
-	//}
+	if (l > 0.7)
+		batteryLevel = 4;
+	else if (l > 0.5)
+		batteryLevel = 3;
+	else if (l > 0.3)
+		batteryLevel = 2;
+	else if (l > 0.2)
+		batteryLevel = 1;
+	else if (l > 0.1)
+		batteryLevel = 0;
+	else if (l > 0.05)
+		batteryLevel = 0;
+		batFlashing = 1;
 	
-	batteryLevel = 4;
 	
 	float w = (float)GET_INPUT_VOLTAGE() * mc_interface_read_reset_avg_input_current() / 12;
 	if (w < 0)
@@ -77,7 +75,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[2] = 0x30;
 	sb[3] = (ms >> 8) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
 	sb[4] = (ms >> 0) & 0xff;	//b4:
-	sb[5] = 0x22;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
+	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
 	sb[6] = 0;
 	
 	//b7: moving animation ()
@@ -119,5 +117,4 @@ void lcd3_process_byte(uint8_t rx_data, PACKET_STATE_t *state)
 		lcd3_process_packet(buffer, LCD3_RX_PACKET_SIZE, UART_PORT_COMM_HEADER);
 	}
 }
-
 
