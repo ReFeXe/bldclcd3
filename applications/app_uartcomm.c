@@ -28,7 +28,7 @@
 // Settings
 
 // By default 7/8 pin uart is index 0, builtin BLE is index 1, and third uart is index 2
-#define BAUDRATE					115200
+#define BAUDRATE					9600
 #ifndef UART_NUMBER
 #ifdef HW_UART_3_DEV
 #define UART_NUMBER 3
