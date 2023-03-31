@@ -11,3 +11,6 @@ additional LCD 3 and high
 Optional: make arm_sdk_install
 
 4. make ubox_v2_75 
+
+
+THIS Firemware is tested and worked, but the LCD functions are being finalized
