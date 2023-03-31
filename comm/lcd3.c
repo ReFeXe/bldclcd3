@@ -43,19 +43,20 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	uint8_t batFlashing = 0;
 
 	float l = mc_interface_get_battery_level(NULL);
-	if (l > 0.7)
+	if (l > 0.6)
 		batteryLevel = 4;
-	else if (l > 0.5)
-		batteryLevel = 3;
 	else if (l > 0.3)
+		batteryLevel = 3;
+	else if (l > 0.15)
 		batteryLevel = 2;
-	else if (l > 0.2)
-		batteryLevel = 1;
-	else if (l > 0.1)
-		batteryLevel = 0;
 	else if (l > 0.05)
+		batteryLevel = 1;
+	else
+	{
 		batteryLevel = 0;
-		batFlashing = 1;
+		if (l <= 0)
+			batFlashing = 1;
+	}
 	
 	
 	float w = (float)GET_INPUT_VOLTAGE() * mc_interface_read_reset_avg_input_current() / 12;
