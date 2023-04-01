@@ -13,5 +13,10 @@ Optional: make arm_sdk_install
 4. make ubox_v2_75 
 
 
+
+after flashing, change UART baudrate 9600
+
+
+
 THIS Firemware is tested and worked, but the LCD functions are being finalized
 ![bldclcd3](https://user-images.githubusercontent.com/129334095/229014217-7b9d9bf6-c86d-4702-b157-ef4f8fd96065.jpg)
