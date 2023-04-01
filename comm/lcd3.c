@@ -37,21 +37,21 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	uint8_t sb[LCD3_REPLY_PACKET_SIZE];
 	
-	int32_t ms = 0;
+	int32_t ms = mc_interface_get_speed();
 	
 	uint8_t batteryLevel;
-	uint8_t batFlashing = 1;
+	uint8_t batFlashing = 0;
 
-	//float l = mc_interface_get_battery_level(NULL);
-	float l = 0.5;
+	float l = mc_interface_get_battery_level(NULL);
 	
-	if (l > 0.6)
+	
+	if (l > 0.7)
 		batteryLevel = 4;
-	else if (l > 0.3)
+	else if (l > 0.4)
 		batteryLevel = 3;
-	else if (l > 0.15)
+	else if (l > 0.2)
 		batteryLevel = 2;
-	else if (l > 0.05)
+	else if (l > 0.1)
 		batteryLevel = 1;
 	else
 	{
