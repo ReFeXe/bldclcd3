@@ -50,6 +50,7 @@ static volatile float max_pulse_period = 0.0;
 static volatile float min_pedal_period = 0.0;
 static volatile float direction_conf = 0.0;
 static volatile float pedal_rpm = 0;
+static volatile uint8_t pas_level = 0;
 static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
@@ -119,37 +120,42 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 
+float app_pas_get_pas_level(void) {
+	return pas_level;
+}
+
 void pas_event_handler(void) {
-#ifdef HW_PAS1_PORT
-	const int8_t QEM[] = {0,-1,1,2,1,0,2,-1,-1,2,0,1,2,1,-1,0}; // Quadrature Encoder Matrix
-	int8_t direction_qem;
+#ifndef ADC_IND_EXT3
 	uint8_t new_state;
 	static uint8_t old_state = 0;
+	static uint8_t count = 0;
 	static float old_timestamp = 0;
+	static float low_voltage = 2.178;
+	static float hight_voltage = 2.185;
+	static int condition = 0;
 	static float inactivity_time = 0;
 	static float period_filtered = 0;
 	static int32_t correct_direction_counter = 0;
 
-	uint8_t PAS1_level = palReadPad(HW_PAS1_PORT, HW_PAS1_PIN);
-	uint8_t PAS2_level = palReadPad(HW_PAS2_PORT, HW_PAS2_PIN);
-
-	new_state = PAS2_level * 2 + PAS1_level;
-	direction_qem = (float) QEM[old_state * 4 + new_state];
-	old_state = new_state;
-
-	// Require several quadrature events in the right direction to prevent vibrations from
-	// engging PAS
-	int8_t direction = (direction_conf * direction_qem);
+	//test pass to vdc
 	
-	switch(direction) {
-		case 1: correct_direction_counter++; break;
-		case -1:correct_direction_counter = 0; break;
+	pas_level = ADC_VOLTS(ADC_IND_EXT3);
+	if (pas_level < low_voltage) {
+		condition = 1;
+	} else if (pas_level > hight_voltage) {
+		condition = 2;
 	}
+
+	new_state = condition;
+	if (new_state != old_state)
+  		count++;
+
+	old_state = new_state;
 
 	const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
 
 	// sensors are poorly placed, so use only one rising edge as reference
-	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
+	if (count > 1) {
 		float period = (timestamp - old_timestamp) * (float)config.magnets;
 		old_timestamp = timestamp;
 
@@ -159,8 +165,9 @@ void pas_event_handler(void) {
 			return;
 		}
 		pedal_rpm = 60.0 / period_filtered;
-		pedal_rpm *= (direction_conf * (float)direction_qem);
+		pedal_rpm *= direction_conf;
 		inactivity_time = 0.0;
+		count = 0;
 	}
 	else {
 		inactivity_time += 1.0 / (float)config.update_rate_hz;
@@ -178,12 +185,9 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	float output = 0;
 	chRegSetThreadName("APP_PAS");
-
-#ifdef HW_PAS1_PORT
-	palSetPadMode(HW_PAS1_PORT, HW_PAS1_PIN, PAL_MODE_INPUT_PULLUP);
-	palSetPadMode(HW_PAS2_PORT, HW_PAS2_PIN, PAL_MODE_INPUT_PULLUP);
-#endif
-
+	#ifndef ADC_IND_EXT3
+	palSetPadMode(GPIOA, 15, PAL_MODE_INPUT_PULLUP);
+	#endif
 	is_running = true;
 
 	for(;;) {
@@ -300,3 +304,4 @@ static THD_FUNCTION(pas_thread, arg) {
 		}
 	}
 }
+
