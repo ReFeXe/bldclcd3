@@ -125,28 +125,18 @@ float app_pas_get_pas_level(void) {
 }
 
 void pas_event_handler(void) {
-#ifndef ADC_IND_EXT3
+
 	uint8_t new_state;
 	static uint8_t old_state = 0;
 	static uint8_t count = 0;
 	static float old_timestamp = 0;
-	static float low_voltage = 2.178;
-	static float hight_voltage = 2.185;
-	static int condition = 0;
 	static float inactivity_time = 0;
 	static float period_filtered = 0;
 	static int32_t correct_direction_counter = 0;
-
-	//test pass to vdc
 	
-	pas_level = ADC_VOLTS(ADC_IND_EXT3);
-	if (pas_level < low_voltage) {
-		condition = 1;
-	} else if (pas_level > hight_voltage) {
-		condition = 2;
-	}
+	uint8_t pas_level = palReadPad(GPIOA, 15);
 
-	new_state = condition;
+	new_state = pas_level;
 	if (new_state != old_state)
   		count++;
 
@@ -177,7 +167,7 @@ void pas_event_handler(void) {
 			pedal_rpm = 0.0;
 		}
 	}
-#endif
+
 }
 
 static THD_FUNCTION(pas_thread, arg) {
@@ -185,9 +175,9 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	float output = 0;
 	chRegSetThreadName("APP_PAS");
-	#ifndef ADC_IND_EXT3
+	
 	palSetPadMode(GPIOA, 15, PAL_MODE_INPUT_PULLUP);
-	#endif
+	
 	is_running = true;
 
 	for(;;) {
@@ -304,4 +294,3 @@ static THD_FUNCTION(pas_thread, arg) {
 		}
 	}
 }
-
