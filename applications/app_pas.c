@@ -132,9 +132,8 @@ void pas_event_handler(void) {
 	static float old_timestamp = 0;
 	static float inactivity_time = 0;
 	static float period_filtered = 0;
-	static int32_t correct_direction_counter = 0;
 	
-	uint8_t pas_level = palReadPad(GPIOA, 15);
+	pas_level = palReadPad(GPIOA, 15);
 
 	new_state = pas_level;
 	if (new_state != old_state)
