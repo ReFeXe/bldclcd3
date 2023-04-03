@@ -76,7 +76,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[1] = (batteryLevel << 2) | batFlashing;
 	
 	sb[2] = 0x30;
-	sb[3] = (ms >> 8) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
+	sb[3] = (ms >> 9) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
 	sb[4] = (ms >> 0) & 0xff;	//b4:
 	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
 	sb[6] = 0;
@@ -90,7 +90,11 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	// bit 5: brake
 	// bit 6: -
 	// bit 7: -
-	sb[7] = 0;
+	sb[7] = 
+		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
+		(0) |
+		((app_pas_get_pedal_rpm() > 2) ? MOVING_ANIMATION_ASSIST : 0) |
+		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
 	sb[9] = (int8_t)(mc_interface_temp_motor_filtered() - 15.0f);	//b9: motor temperature +15
