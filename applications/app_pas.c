@@ -19,6 +19,7 @@
  */
 
 #include "app.h"
+#include "commands.h"
 
 #include "ch.h"
 #include "hal.h"
@@ -134,7 +135,7 @@ void pas_event_handler(void) {
 	static float period_filtered = 0;
 	
 	pas_level = palReadPad(GPIOA, 15);
-
+	
 	new_state = pas_level;
 	if (new_state != old_state)
   		count++;
