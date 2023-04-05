@@ -38,9 +38,8 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	(void)len;
 	(void)reply_func;
 	
-	uint8_t lcd_pas_mode = 0;
-	lcd_pas_mode = data[1];
-	uint8_t fixed_throttle_level = data[4] & (1 << 5);
+	uint8_t lcd_pas_mode = data[1];
+	uint8_t fixed_throttle_level = data[4] & (1 << 4);
 	
 	float current_scale;
 	
@@ -78,6 +77,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	float l = mc_interface_get_battery_level(NULL);
 	
 	
+	
 	if (l > 0.7)
 		batteryLevel = 4;
 	else if (l > 0.4)
@@ -109,7 +109,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[1] = (batteryLevel << 2) | batFlashing;
 	
 	sb[2] = 0x30;
-	sb[3] = (ms >> 8) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
+	sb[3] = (ms >> 1) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
 	sb[4] = (ms >> 0) & 0xff;	//b4:
 	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
 	sb[6] = 0;
@@ -126,7 +126,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[7] = 
 		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
 		(0) |
-		((fixed_throttle_level == 1) ? MOVING_ANIMATION_ASSIST : 0) |
+		((fixed_throttle_level > 0) ? MOVING_ANIMATION_ASSIST : 0) |
 		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
