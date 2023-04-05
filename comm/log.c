@@ -55,7 +55,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		current_scale = 1;
 		
 	
-	if(fixed_throttle_level == 1) {
+	if(fixed_throttle_level == 0) {
 		mcconf->l_current_max_scale = 1.0;
 		app_pas_set_current_sub_scaling(current_scale);
 	} else {
