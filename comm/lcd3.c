@@ -40,17 +40,23 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	uint8_t lcd_pas_mode = 0;
 	lcd_pas_mode = data[1];
-	fixed_throttle_level = data[2] & (1 << 4);
+	uint8_t fixed_throttle_level = data[2] & (1 << 4);
 	
 	float current_scale;
 	
 	if (lcd_pas_mode == 1)
 		current_scale = 0.1;
-	else if (lcd_pas_mode > 1)
-		current_scale = (lcd_pas_mode / 6);
+	else if (lcd_pas_mode == 2)
+		current_scale = 0.2;
+	else if (lcd_pas_mode == 3)
+		current_scale = 0.35;
+	else if (lcd_pas_mode == 4)
+		current_scale = 0.65;
+	else if (lcd_pas_mode == 5)
+		current_scale = 1;
+		
 	
-	
-	if( fixed_throttle_level == 1 ) {
+	if(fixed_throttle_level == 1) {
 		mcconf->l_current_max_scale = 1.0;
 		app_pas_set_current_sub_scaling(current_scale);
 	} else {
@@ -120,7 +126,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[7] = 
 		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
 		(0) |
-		((app_pas_get_pas_level() > 0) ? MOVING_ANIMATION_ASSIST : 0) |
+		((fixed_throttle_level == 1) ? MOVING_ANIMATION_ASSIST : 0) |
 		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
