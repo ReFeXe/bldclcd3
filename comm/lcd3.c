@@ -33,10 +33,14 @@ extern void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len, 
 void lcd3_process_packet(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len))
 {
+	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
+
 	(void)len;
+	(void)reply_func;
 	
 	uint8_t lcd_pas_mode = 0;
 	lcd_pas_mode = data[1];
+	fixed_throttle_level = data[2] & (1 << 4);
 	
 	float current_scale;
 	
@@ -46,8 +50,16 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		current_scale = (lcd_pas_mode / 6);
 	
 	
-	app_pas_set_current_sub_scaling(current_scale);
+	if( fixed_throttle_level == 1 ) {
+		mcconf->l_current_max_scale = 1.0;
+		app_pas_set_current_sub_scaling(current_scale);
+	} else {
+		mcconf->l_current_max_scale = current_scale;
+	}
 	
+	if(current_scale == 0.0) {
+		mcconf->l_current_max_scale = current_scale;
+	}
 	
 	
 	uint8_t sb[LCD3_REPLY_PACKET_SIZE];
