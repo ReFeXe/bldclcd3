@@ -31,7 +31,9 @@ To begin with, reset the settings to default
 Then you can configure VESC via lcd
 
 C8 = Enable ESC (Motor) Temp
+
 C13 = 0 - ESC Temp, 1 - Motor temp;
+
 
 P4 = 0 - Fixed throttle (The speed buttons control only the PAS),  1 - The speed buttons control the total power
 
