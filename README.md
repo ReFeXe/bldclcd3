@@ -20,3 +20,18 @@ after flashing, change UART baudrate 9600
 
 THIS Firemware is tested and worked, but the LCD functions are being finalized
 ![bldclcd3](https://user-images.githubusercontent.com/129334095/229014217-7b9d9bf6-c86d-4702-b157-ef4f8fd96065.jpg)
+
+
+
+Parametrs KT display 
+
+To begin with, reset the settings to default
+С10 - YES
+
+Then you can configure VESC via lcd
+
+C8 = Enable ESC (Motor) Temp
+C13 = 0 - ESC Temp, 1 - Motor temp;
+
+P4 = 0 - Fixed throttle (The speed buttons control only the PAS),  1 - The speed buttons control the total power
+
