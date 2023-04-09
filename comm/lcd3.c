@@ -38,9 +38,9 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	(void)len;
 	(void)reply_func;
 	
-	uint8_t lcd_pas_mode = 0;
-	lcd_pas_mode = data[1];
-	uint8_t fixed_throttle_level = data[2] & (1 << 4);
+	uint8_t lcd_pas_mode = data[1];
+	bool fixed_throttle_level = (data[4] >> 4) & 1;
+	bool temp_mode =  (data[10] >> 2) & 1;
 	
 	float current_scale;
 	
@@ -56,7 +56,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		current_scale = 1;
 		
 	
-	if(fixed_throttle_level == 1) {
+	if(fixed_throttle_level == 0) {
 		mcconf->l_current_max_scale = 1.0;
 		app_pas_set_current_sub_scaling(current_scale);
 	} else {
@@ -70,12 +70,22 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	uint8_t sb[LCD3_REPLY_PACKET_SIZE];
 	
-	int32_t ms = mc_interface_get_speed();
+	
+	float ms = (float)(mc_interface_get_speed()* 3600.0 / 1000.0); //speed vesc to km.h
+	
+	uint16_t pms = 0;
+	if (ms < 2){
+	 pms = 0;
+	} else {
+	 pms = (7360 / ms);
+	}
+	
 	
 	uint8_t batteryLevel;
 	uint8_t batFlashing = 0;
 
 	float l = mc_interface_get_battery_level(NULL);
+	
 	
 	
 	if (l > 0.7)
@@ -102,15 +112,25 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	sb[0] = 0x41;
 	
+	
+	int8_t temp;
+	if(temp_mode) {
+		temp = (int8_t)mc_interface_temp_motor_filtered();	
+	} else {
+		temp = (int8_t)mc_interface_temp_fet_filtered();
+	}
+	
 	//b1: battery level:
 	// bit 0: border flashing,
 	// bit 1: animated charging,
 	// bit 3-5: level, (0-4)
 	sb[1] = (batteryLevel << 2) | batFlashing;
 	
-	sb[2] = 0x30;
-	sb[3] = (ms >> 8) & 0xff;	//b3: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
-	sb[4] = (ms >> 0) & 0xff;	//b4:
+	sb[2] = 0x30; //battery voltage
+	
+	sb[3] = (uint8_t)(pms/256);	//b3, b4: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
+	sb[4] = pms - sb[3]*256;
+	
 	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
 	sb[6] = 0;
 	
@@ -126,11 +146,12 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[7] = 
 		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
 		(0) |
-		((fixed_throttle_level == 1) ? MOVING_ANIMATION_ASSIST : 0) |
+		((app_pas_get_pedal_rpm() > 1) ? MOVING_ANIMATION_ASSIST : 0) |
 		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
-	sb[9] = (int8_t)(mc_interface_temp_motor_filtered() - 15.0f);	//b9: motor temperature +15
+
+	sb[9] = (int8_t)(temp - 15.0f);	//b9: motor temperature +15
 	sb[10] = 0;	//
 	sb[11] = 0;	//
 	
