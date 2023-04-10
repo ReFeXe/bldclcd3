@@ -30,83 +30,26 @@ extern void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len, 
 #define MOVING_ANIMATION_ASSIST		(1 << 4)
 #define MOVING_ANIMATION_BRAKE		(1 << 5)
 
-uint8_t wd = 0;
-uint8_t oldwd = 0;
-
-float lcd3_get_wd(void) {
-	return wd;
-}
-
 
 void lcd3_process_packet(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len))
 {
+	
+	(void)len;
+	(void)reply_func;
+	
 	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
 	
 
-	(void)len;
-	(void)reply_func;
+
+
 	
 	uint8_t lcd_pas_mode = data[1];
 	bool fixed_throttle_level = (data[4] >> 4) & 1;
 	bool temp_mode =  (data[10] >> 2) & 1;
+	bool l3 =  (data[10] >> 0) & 1;
 	
-	if ((data[2] >> 2) & 1)
-		wd |= (1 << 4);
-	else 	wd &= ~(1 << 4);
-	
-	if ((data[2] >> 1) & 1)
-		wd |= (1 << 3);
-	else 	wd &= ~(1 << 3);
-	
-	if ((data[2] >> 0) & 1)
-		wd |= (1 << 2);
-	else 	wd &= ~(1 << 2);
-	
-	if ((data[4] >> 7) & 1)
-		wd |= (1 << 1);
-	else 	wd &= ~(1 << 1);
-	
-	if ((data[4] >> 6) & 1)
-		wd |= (1 << 0);
-	else 	wd &= ~(1 << 0);
-	
-	
-	if (oldwd != wd){
-	
-		if (wd == 30){
-			mcconf->si_wheel_diameter = 0.736;}
-		else if (wd == 28){
-			mcconf->si_wheel_diameter = 0.711;}
-		else if (wd == 24){
-			mcconf->si_wheel_diameter = 0.685;}
-		else if (wd == 20){
-			mcconf->si_wheel_diameter = 0.660;}
-		else if (wd == 16){
-			mcconf->si_wheel_diameter = 0.609;}
-		else if (wd == 12){
-			mcconf->si_wheel_diameter = 0.584;}
-		else if (wd == 8){
-			mcconf->si_wheel_diameter = 0.508;}
-		else if (wd == 4){
-			mcconf->si_wheel_diameter = 0.457;}
-		else if (wd == 0){
-			mcconf->si_wheel_diameter = 0.406;}
-		else if (wd == 6){
-			mcconf->si_wheel_diameter = 0.355;}
-		else if (wd == 2){
-			mcconf->si_wheel_diameter = 0.304;}
-		else if (wd == 14){
-			mcconf->si_wheel_diameter = 0.254;}
-		else if (wd == 10){
-			mcconf->si_wheel_diameter = 0.203;}			
-		
-		oldwd = wd;
-	}
-	
-	
-	
-	float current_scale;
+	float current_scale = 0.0;
 	
 	if (lcd_pas_mode == 1)
 		current_scale = 0.1;
@@ -119,6 +62,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	else if (lcd_pas_mode == 5)
 		current_scale = 1;
 		
+		
 	
 	if(fixed_throttle_level == 0) {
 		mcconf->l_current_max_scale = 1.0;
@@ -127,7 +71,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		mcconf->l_current_max_scale = current_scale;
 	}
 	
-	if(current_scale == 0.0) {
+	if((current_scale == 0.0) && l3) {
 		mcconf->l_current_max_scale = current_scale;
 	}
 	
