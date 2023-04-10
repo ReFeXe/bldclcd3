@@ -44,9 +44,9 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 
 
 	
-	uint8_t lcd_pas_mode = data[1];
-	bool fixed_throttle_level = (data[4] >> 4) & 1;
-	bool temp_mode =  (data[10] >> 2) & 1;
+	uint8_t lcd_pas_mode = data[1];  //speedbutton
+	bool fixed_throttle_level = (data[4] >> 4) & 1;  //p4
+	bool temp_mode =  (data[10] >> 2) & 1;  //c13
 	bool l3 =  (data[10] >> 0) & 1;
 	
 	float current_scale = 0.0;
