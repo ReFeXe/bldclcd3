@@ -36,4 +36,5 @@ C13 = 0 - ESC Temp, 1 - Motor temp;
 
 
 P4 = 0 - Fixed throttle (The speed buttons control only the PAS),  1 - The speed buttons control the total power
+L3 - setting the power to 0 at 0 speed throttle and pas. Default - o
 
