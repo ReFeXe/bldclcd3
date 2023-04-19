@@ -48,7 +48,6 @@
 #endif
 
 #define LCD3_ENABLE
-
 // This is how to provide a custom UI in VESC Tool. The UI can be created and tested in the
 // scripting page, then the source files can be exported. The defines below use the exported
 // files to provide the custom UI when VESC Tool connects.
