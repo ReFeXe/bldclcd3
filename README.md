@@ -17,6 +17,9 @@ Optional: make arm_sdk_install
 after flashing, change UART baudrate 9600
 
 
+BY BY UART, LCD3 Active PAS and ADC + PAS, on it PAS pin`s change to SWDIO and SWCLK
+
+
 
 THIS Firemware is tested and worked, but the LCD functions are being finalized
 ![bldclcd3](https://user-images.githubusercontent.com/129334095/229014217-7b9d9bf6-c86d-4702-b157-ef4f8fd96065.jpg)
