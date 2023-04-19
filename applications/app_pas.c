@@ -134,7 +134,7 @@ void pas_event_handler(void) {
 	static float inactivity_time = 0;
 	static float period_filtered = 0;
 	
-	pas_level = palReadPad(GPIOA, 15);
+	pas_level = palReadPad(GPIOA, 13);
 	
 	new_state = pas_level;
 	if (new_state != old_state)
@@ -176,7 +176,7 @@ static THD_FUNCTION(pas_thread, arg) {
 	float output = 0;
 	chRegSetThreadName("APP_PAS");
 	
-	palSetPadMode(GPIOA, 15, PAL_MODE_INPUT_PULLUP);
+	palSetPadMode(GPIOA, 13, PAL_MODE_INPUT_PULLUP);
 	
 	is_running = true;
 
