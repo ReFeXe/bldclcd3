@@ -40,5 +40,7 @@ C13 = 0 - ESC Temp, 1 - Motor temp;
 
 P4 = 0 - Fixed throttle (The speed buttons control only the PAS),  1 - The speed buttons control the total power
 
+L1 - PAS Sensor one magnet. (KT one hall sensor). 1 Enable. 0 Disable (Default VESC QEM sensor).
+
 L3 - setting the power to 0 at 0 speed throttle and pas. Default - 1
 
