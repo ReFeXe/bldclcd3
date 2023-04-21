@@ -52,6 +52,8 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	
 	if(pas_one_magnet) {
 	 app_pas_set_one_magnet(true);
+	} else if (pas_one_magnet == 0) {
+	 app_pas_set_one_magnet(false);
 	}
 	
 	float current_scale = 0.0;
