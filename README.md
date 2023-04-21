@@ -28,6 +28,10 @@ In UBOX, it is loaded only into the first controller
 
 
 
+
+
+
+
 Parametrs KT display 
 
 To begin with, reset the settings to default
