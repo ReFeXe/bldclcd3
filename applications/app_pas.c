@@ -120,6 +120,10 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 
+void app_pas_set_one_magnet(bool use_one_magnet) {
+	pas_one_magnet = use_one_magnet;
+}
+
 void pas_event_handler(void) {
 #ifdef HW_PAS1_PORT
 	const int8_t QEM[] = {0,-1,1,2,1,0,2,-1,-1,2,0,1,2,1,-1,0}; // Quadrature Encoder Matrix
