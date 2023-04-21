@@ -48,6 +48,11 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	bool fixed_throttle_level = (data[4] >> 4) & 1;  //p4
 	bool temp_mode =  (data[10] >> 2) & 1;  //c13
 	bool l3 =  (data[10] >> 0) & 1;
+	bool pas_one_magnet = (data[11] << 1) & 1; //l1
+	
+	if(pas_one_magnet) {
+	 app_pas_set_one_magnet(true);
+	}
 	
 	float current_scale = 0.0;
 	
