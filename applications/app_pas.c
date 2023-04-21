@@ -140,9 +140,11 @@ void pas_event_handler(void) {
 	
 		uint8_t	pas_level = palReadPad(GPIOA, 13);
 		
-			new_state = pas_level;
-			if (new_state != old_state) {
-		  		count++;}
+		new_state = pas_level;
+		
+		if (new_state != old_state) {
+		  	count++;}
+		  	
 		old_state = new_state;
 		
 		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
@@ -162,7 +164,7 @@ void pas_event_handler(void) {
 		else {
 			inactivity_time += 1.0 / (float)config.update_rate_hz;
 			//if no pedal activity, set RPM as zero
-			if(inactivity_time > max_pulse_period) {
+			if(inactivity_time > (max_pulse_period / 1.5) {
 				pedal_rpm = 0.0;
 			}
 		}
