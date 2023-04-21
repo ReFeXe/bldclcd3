@@ -24,6 +24,8 @@ BY BY UART, LCD3 Active PAS and ADC + PAS, on it PAS pin`s change to SWDIO and S
 THIS Firemware is tested and worked, but the LCD functions are being finalized
 ![bldclcd3](https://user-images.githubusercontent.com/129334095/229014217-7b9d9bf6-c86d-4702-b157-ef4f8fd96065.jpg)
 
+In UBOX, it is loaded only into the first controller
+
 
 
 Parametrs KT display 
