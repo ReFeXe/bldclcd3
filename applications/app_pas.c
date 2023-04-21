@@ -54,6 +54,7 @@ static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
 static volatile float torque_ratio = 0.0;
+static volatile bool pas_one_magnet = false;
 
 /**
  * Configure and initialize PAS application
@@ -129,45 +130,80 @@ void pas_event_handler(void) {
 	static float inactivity_time = 0;
 	static float period_filtered = 0;
 	static int32_t correct_direction_counter = 0;
+	static uint8_t count = 0;
 
-	uint8_t PAS1_level = palReadPad(GPIOA, 13);
-	uint8_t PAS2_level = palReadPad(GPIOA, 14);
-
-	new_state = PAS2_level * 2 + PAS1_level;
-	direction_qem = (float) QEM[old_state * 4 + new_state];
-	old_state = new_state;
-
-	// Require several quadrature events in the right direction to prevent vibrations from
-	// engging PAS
-	int8_t direction = (direction_conf * direction_qem);
+	if(pas_one_magnet){
 	
-	switch(direction) {
-		case 1: correct_direction_counter++; break;
-		case -1:correct_direction_counter = 0; break;
-	}
-
-	const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
-
-	// sensors are poorly placed, so use only one rising edge as reference
-	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
-		float period = (timestamp - old_timestamp) * (float)config.magnets;
-		old_timestamp = timestamp;
-
-		UTILS_LP_FAST(period_filtered, period, 1.0);
-
-		if(period_filtered < min_pedal_period) { //can't be that short, abort
-			return;
+		uint8_t	pas_level = palReadPad(GPIOA, 13);
+		
+			new_state = pas_level;
+			if (new_state != old_state) {
+		  		count++;}
+		old_state = new_state;
+		
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+		
+		if (count > 1) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			pedal_rpm = 60.0 / period_filtered;
+			pedal_rpm *= direction_conf;
+			inactivity_time = 0.0;
+			count = 0;
 		}
-		pedal_rpm = 60.0 / period_filtered;
-		pedal_rpm *= (direction_conf * (float)direction_qem);
-		inactivity_time = 0.0;
-	}
-	else {
-		inactivity_time += 1.0 / (float)config.update_rate_hz;
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > max_pulse_period) {
+				pedal_rpm = 0.0;
+			}
+		}
+	
+	} else {
+	
+		uint8_t PAS1_level = palReadPad(GPIOA, 13);
+		uint8_t PAS2_level = palReadPad(GPIOA, 14);
 
-		//if no pedal activity, set RPM as zero
-		if(inactivity_time > max_pulse_period) {
-			pedal_rpm = 0.0;
+		new_state = PAS2_level * 2 + PAS1_level;
+		direction_qem = (float) QEM[old_state * 4 + new_state];
+		old_state = new_state;
+
+		// Require several quadrature events in the right direction to prevent vibrations from
+		// engging PAS
+		int8_t direction = (direction_conf * direction_qem);
+		
+		switch(direction) {
+			case 1: correct_direction_counter++; break;
+			case -1:correct_direction_counter = 0; break;
+		}
+		
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+
+		// sensors are poorly placed, so use only one rising edge as reference
+		if( (new_state == 3) && (correct_direction_counter >= 4) ) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			pedal_rpm = 60.0 / period_filtered;
+			pedal_rpm *= (direction_conf * (float)direction_qem);
+			inactivity_time = 0.0;
+		}
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > max_pulse_period) {
+				pedal_rpm = 0.0;
+			}
 		}
 	}
 #endif
