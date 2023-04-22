@@ -161,8 +161,8 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	// bit 7: -
 	sb[7] = 
 		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
-		(0) |
-		((app_pas_get_pedal_rpm() > 1) ? MOVING_ANIMATION_ASSIST : 0) |
+		(app_pas_get_reverse_pedaling() ? MOVING_ANIMATION_CRUISE : 0) |
+		((app_pas_get_pedal_rpm() > 11) ? MOVING_ANIMATION_ASSIST : 0) |
 		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
 	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
