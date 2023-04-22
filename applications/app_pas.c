@@ -55,6 +55,9 @@ static volatile bool stop_now = true;
 static volatile bool is_running = false;
 static volatile float torque_ratio = 0.0;
 static volatile bool pas_one_magnet = false;
+static volatile int8_t reverse_pedaling = 0;
+static volatile uint32_t count_positive = 5;
+static volatile uint32_t count_negative = 5;
 
 /**
  * Configure and initialize PAS application
@@ -119,6 +122,11 @@ float app_pas_get_current_target_rel(void) {
 float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
+bool app_pas_get_reverse_pedaling(void) {
+	if (reverse_pedaling > 90) { 
+		return true;
+	} else { return false; }
+}
 
 void app_pas_set_one_magnet(bool use_one_magnet) {
 	pas_one_magnet = use_one_magnet;
@@ -147,6 +155,28 @@ void pas_event_handler(void) {
 		  	
 		old_state = new_state;
 		
+		
+		if (config.invert_pedal_direction) {
+			if (new_state) {
+			count_negative++;
+			} else {
+			count_positive++;}
+		} else { 
+			if (new_state) {
+			count_positive++;
+			} else {
+			count_negative++;}
+			
+		}
+		
+		if ((count > 1) & ((((count_positive - count_negative) / count_positive) * 100) > 40)) {
+			reverse_pedaling = 0;
+			correct_direction_counter++;
+		} else {
+			reverse_pedaling++;
+			correct_direction_counter = 0;}
+		
+		 
 		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
 		
 		if (count > 1) {
@@ -156,8 +186,10 @@ void pas_event_handler(void) {
 			if(period_filtered < min_pedal_period) { //can't be that short, abort
 				return;
 			}
-			pedal_rpm = 60.0 / period_filtered;
-			pedal_rpm *= direction_conf;
+			if (correct_direction_counter > 0) {
+				reverse_pedaling = 0;
+				pedal_rpm = 60.0 / period_filtered;
+			}
 			inactivity_time = 0.0;
 			count = 0;
 		}
@@ -166,6 +198,9 @@ void pas_event_handler(void) {
 			//if no pedal activity, set RPM as zero
 			if(inactivity_time > (max_pulse_period / 1.5)) {
 				pedal_rpm = 0.0;
+				count_positive = 5;
+				count_negative = 5;
+				reverse_pedaling = 0;
 			}
 		}
 	
@@ -223,7 +258,9 @@ static THD_FUNCTION(pas_thread, arg) {
 
 #ifdef HW_PAS1_PORT
 	palSetPadMode(GPIOA, 13, PAL_MODE_INPUT_PULLUP);
+	if(pas_one_magnet == 0){
 	palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLUP);
+	}
 #endif
 
 	is_running = true;
