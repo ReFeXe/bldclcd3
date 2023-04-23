@@ -1,5 +1,6 @@
 /*
-	Copyright 2016 - 2019 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2016 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2020 Marcos Chaparro	mchaparro@powerdesigns.ca
 
 	This file is part of the VESC firmware.
 
@@ -15,216 +16,381 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+ */
 
 #include "app.h"
+
 #include "ch.h"
 #include "hal.h"
-#include "hw.h"
-#include "nrf_driver.h"
-#include "rfhelp.h"
+#include "stm32f4xx_conf.h"
+#include "mc_interface.h"
+#include "timeout.h"
+#include "utils_math.h"
 #include "comm_can.h"
-#include "imu.h"
-#include "crc.h"
-#include "servo_simple.h"
-#include "servo_dec.h"
+#include "hw.h"
+#include <math.h>
+
+// Settings
+#define PEDAL_INPUT_TIMEOUT				0.2
+#define MAX_MS_WITHOUT_CADENCE			5000
+#define MIN_MS_WITHOUT_POWER			500
+#define FILTER_SAMPLES					5
+#define RPM_FILTER_SAMPLES				8
+
+// Threads
+static THD_FUNCTION(pas_thread, arg);
+static THD_WORKING_AREA(pas_thread_wa, 512);
 
 // Private variables
-static app_configuration appconf = {0};
-static virtual_timer_t output_vt = {0};
-static bool output_vt_init_done = false;
-static volatile bool output_disabled_now = false;
+static volatile pas_config config;
+static volatile float sub_scaling = 1.0;
+static volatile float output_current_rel = 0.0;
+static volatile float ms_without_power = 0.0;
+static volatile float max_pulse_period = 0.0;
+static volatile float min_pedal_period = 0.0;
+static volatile float direction_conf = 0.0;
+static volatile float pedal_rpm = 0;
+static volatile bool primary_output = false;
+static volatile bool stop_now = true;
+static volatile bool is_running = false;
+static volatile float torque_ratio = 0.0;
+static volatile bool pas_one_magnet = false;
+static volatile int8_t reverse_pedaling = 0;
+static volatile uint32_t count_positive = 79;
+static volatile uint32_t count_negative = 79;
 
-// Private functions
-static void output_vt_cb(void *arg);
+/**
+ * Configure and initialize PAS application
+ *
+ * @param conf
+ * App config
+ */
+void app_pas_configure(pas_config *conf) {
+	config = *conf;
+	ms_without_power = 0.0;
+	output_current_rel = 0.0;
 
-const app_configuration* app_get_configuration(void) {
-	return &appconf;
+	// a period longer than this should immediately reduce power to zero
+	max_pulse_period = 1.0 / ((config.pedal_rpm_start / 60.0) * config.magnets) * 1.2;
+
+	// if pedal spins at x3 the end rpm, assume its beyond limits
+	min_pedal_period = 1.0 / ((config.pedal_rpm_end * 3.0 / 60.0));
+
+	(config.invert_pedal_direction) ? (direction_conf = -1.0) : (direction_conf = 1.0);
 }
 
 /**
- * Reconfigure and restart all apps. Some apps don't have any configuration options.
+ * Start PAS thread
  *
- * @param conf
- * The new configuration to use.
+ * @param is_primary_output
+ * True when PAS app takes direct control of the current target,
+ * false when PAS app shares control with the ADC app for current command
  */
-void app_set_configuration(app_configuration *conf) {
-	bool app_changed = appconf.app_to_use != conf->app_to_use;
+void app_pas_start(bool is_primary_output) {
+	stop_now = false;
+	chThdCreateStatic(pas_thread_wa, sizeof(pas_thread_wa), NORMALPRIO, pas_thread, NULL);
 
-	if (!app_changed) {
-		app_changed = appconf.servo_out_enable != conf->servo_out_enable;
+	primary_output = is_primary_output;
+}
+
+bool app_pas_is_running(void) {
+	return is_running;
+}
+
+void app_pas_stop(void) {
+	stop_now = true;
+	while (is_running) {
+		chThdSleepMilliseconds(1);
 	}
 
-	appconf = *conf;
-
-	if (app_changed) {
-		app_ppm_stop();
-		app_adc_stop();
-		app_uartcomm_stop(UART_PORT_COMM_HEADER);
-		app_nunchuk_stop();
-		app_balance_stop();
-		app_pas_stop();
-
-#ifdef APP_CUSTOM_TO_USE
-		app_custom_stop();
-#endif
+	if (primary_output == true) {
+		mc_interface_set_current_rel(0.0);
 	}
-
-	if (!conf_general_permanent_nrf_found) {
-		nrf_driver_stop();
+	else {
+		output_current_rel = 0.0;
 	}
+}
 
-#if CAN_ENABLE
-	comm_can_set_baud(conf->can_baud_rate);
-#endif
+void app_pas_set_current_sub_scaling(float current_sub_scaling) {
+	sub_scaling = current_sub_scaling;
+}
 
-	imu_init(&conf->imu_conf);
+float app_pas_get_current_target_rel(void) {
+	return output_current_rel;
+}
 
-	// Configure balance app before starting it.
-	app_balance_configure(&appconf.app_balance_conf, &appconf.imu_conf);
+float app_pas_get_pedal_rpm(void) {
+	return pedal_rpm;
+}
+bool app_pas_get_reverse_pedaling(void) {
+	if (reverse_pedaling > 4) { 
+		return true;
+	} else { return false; }
+}
 
-	if (app_changed) {
-		if (appconf.app_to_use != APP_PPM &&
-				appconf.app_to_use != APP_PPM_UART &&
-				appconf.servo_out_enable) {
-			servodec_stop();
-			servo_simple_init();
+void app_pas_set_one_magnet(bool use_one_magnet) {
+	pas_one_magnet = use_one_magnet;
+}
+
+void pas_event_handler(void) {
+#ifdef HW_PAS1_PORT
+	const int8_t QEM[] = {0,-1,1,2,1,0,2,-1,-1,2,0,1,2,1,-1,0}; // Quadrature Encoder Matrix
+	int8_t direction_qem;
+	uint8_t new_state;
+	static uint8_t old_state = 0;
+	static float old_timestamp = 0;
+	static float inactivity_time = 0;
+	static float period_filtered = 0;
+	static int32_t correct_direction_counter = 0;
+	static uint8_t count = 0;
+
+	if(pas_one_magnet){
+	
+		uint8_t	pas_level = palReadPad(GPIOA, 13);
+		
+		new_state = pas_level;
+		
+		if (new_state != old_state) {
+		  	count++;}
+		  	
+		old_state = new_state;
+		
+		
+		if (config.invert_pedal_direction) {
+			if (new_state) {
+			count_negative++;
+			} else {
+			count_positive++;}
+		} else { 
+			if (new_state) {
+			count_positive++;
+			} else {
+			count_negative++;}
+			
+		}
+		
+		if ((count > 1) & ((((count_positive - count_negative) / count_positive) * 100) > 42)) {
+			reverse_pedaling = 0;
+			correct_direction_counter++;
 		} else {
-			servo_simple_stop();
+			correct_direction_counter = 0;}
+			
+			
+			
+		if ((count > 1) & (correct_direction_counter == 0) & (reverse_pedaling < 20)) {
+				reverse_pedaling++;
 		}
-
-		switch (appconf.app_to_use) {
-		case APP_PPM:
-			app_ppm_start();
-			break;
-
-		case APP_ADC:
-			app_adc_start(true);
-			break;
-
-		case APP_UART:
-			hw_stop_i2c();
-			app_uartcomm_start(UART_PORT_COMM_HEADER);
-			break;
-
-		case APP_PPM_UART:
-			hw_stop_i2c();
-			app_ppm_start();
-			app_uartcomm_start(UART_PORT_COMM_HEADER);
-			break;
-
-		case APP_ADC_UART:
-			hw_stop_i2c();
-			app_adc_start(false);
-			app_uartcomm_start(UART_PORT_COMM_HEADER);
-			break;
-
-		case APP_NUNCHUK:
-			app_nunchuk_start();
-			break;
-
-		case APP_BALANCE:
-			app_balance_start();
-			if(appconf.imu_conf.type == IMU_TYPE_INTERNAL){
-				hw_stop_i2c();
-				app_uartcomm_start(UART_PORT_COMM_HEADER);
-			}
-			break;
-
-		case APP_PAS:
-			app_pas_start(true);
-			break;
-
-		case APP_ADC_PAS:
-			app_adc_start(false);
-			app_pas_start(false);
-			break;
-
-		case APP_NRF:
-			if (!conf_general_permanent_nrf_found) {
-				nrf_driver_init();
-				rfhelp_restart();
-			}
-			break;
-
-		case APP_CUSTOM:
-#ifdef APP_CUSTOM_TO_USE
-			hw_stop_i2c();
-			app_custom_start();
-#endif
-			break;
-
-		default:
-			break;
+		
+		if  ((count > 1) & (reverse_pedaling > 4)) {
+			pedal_rpm = 0.0;
 		}
-	}
-
-	app_ppm_configure(&appconf.app_ppm_conf);
-	app_adc_configure(&appconf.app_adc_conf);
-	app_pas_configure(&appconf.app_pas_conf);
-	app_uartcomm_configure(appconf.app_uart_baudrate, true, UART_PORT_COMM_HEADER);
-	app_uartcomm_configure(0, appconf.permanent_uart_enabled, UART_PORT_BUILTIN);
-	app_nunchuk_configure(&appconf.app_chuk_conf);
-
-#ifdef APP_CUSTOM_TO_USE
-	app_custom_configure(&appconf);
-#endif
-
-	rfhelp_update_conf(&appconf.app_nrf_conf);
-}
-
-/**
- * Disable output on apps
- *
- * @param time_ms
- * The amount of time to disable output in ms
- * 0: Enable output now
- * -1: Disable forever
- * >0: Amount of milliseconds to disable output
- */
-void app_disable_output(int time_ms) {
-	if (!output_vt_init_done) {
-		chVTObjectInit(&output_vt);
-		output_vt_init_done = true;
-	}
-
-	if (time_ms == 0) {
-		output_disabled_now = false;
-	} else if (time_ms == -1) {
-		output_disabled_now = true;
-		chVTReset(&output_vt);
+		 
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+		
+		if (count > 1) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			if (correct_direction_counter > 0) {
+				reverse_pedaling = 0;
+				if (pedal_rpm < 3) {
+					pedal_rpm = 4;
+				} else if (pedal_rpm == 5) {	// pull the time to adjust the counters
+					pedal_rpm = 5;
+				} else if (pedal_rpm == 5) {		
+					pedal_rpm = 30.0 / period_filtered; 	//safe start
+				} else { 
+					pedal_rpm = 60.0 / period_filtered;}
+			}
+			inactivity_time = 0.0;
+			count = 0;
+		}
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > (max_pulse_period / 1.7)) {
+				pedal_rpm = 0.0;
+				count_positive = 79;
+				count_negative = 79;
+				reverse_pedaling = 0;
+			}
+		}
+	
 	} else {
-		output_disabled_now = true;
-		chVTSet(&output_vt, MS2ST(time_ms), output_vt_cb, 0);
+	
+		uint8_t PAS1_level = palReadPad(GPIOA, 13);
+		uint8_t PAS2_level = palReadPad(GPIOA, 14);
+
+		new_state = PAS2_level * 2 + PAS1_level;
+		direction_qem = (float) QEM[old_state * 4 + new_state];
+		old_state = new_state;
+
+		// Require several quadrature events in the right direction to prevent vibrations from
+		// engging PAS
+		int8_t direction = (direction_conf * direction_qem);
+		
+		switch(direction) {
+			case 1: correct_direction_counter++; break;
+			case -1:correct_direction_counter = 0; break;
+		}
+		
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+
+		// sensors are poorly placed, so use only one rising edge as reference
+		if( (new_state == 3) && (correct_direction_counter >= 4) ) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			pedal_rpm = 60.0 / period_filtered;
+			pedal_rpm *= (direction_conf * (float)direction_qem);
+			inactivity_time = 0.0;
+		}
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > max_pulse_period) {
+				pedal_rpm = 0.0;
+			}
+		}
 	}
+#endif
 }
 
-bool app_is_output_disabled(void) {
-	return output_disabled_now;
-}
-
-static void output_vt_cb(void *arg) {
+static THD_FUNCTION(pas_thread, arg) {
 	(void)arg;
-	output_disabled_now = false;
-}
 
-/**
- * Get app_configuration CRC
- *
- * @param conf
- * Pointer to app_configuration or NULL for current appconf
- *
- * @return
- * CRC16 (with crc field in struct temporarily set to zero).
- */
-unsigned short app_calc_crc(app_configuration* conf) {
-	if (NULL == conf) {
-		conf = &appconf;
+	float output = 0;
+	chRegSetThreadName("APP_PAS");
+
+#ifdef HW_PAS1_PORT
+	palSetPadMode(GPIOA, 13, PAL_MODE_INPUT_PULLUP);
+	if(pas_one_magnet == 0){
+	palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLUP);
 	}
+#endif
 
-	unsigned short crc_old = conf->crc;
-	conf->crc = 0;
-	unsigned short crc_new = crc16((uint8_t*)conf, sizeof(app_configuration));
-	conf->crc = crc_old;
-	return crc_new;
+	is_running = true;
+
+	for(;;) {
+		// Sleep for a time according to the specified rate
+		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+
+		// At least one tick should be slept to not block the other threads
+		if (sleep_time == 0) {
+			sleep_time = 1;
+		}
+		chThdSleep(sleep_time);
+
+		if (stop_now) {
+			is_running = false;
+			return;
+		}
+
+		pas_event_handler();	// this could happen inside an ISR instead of being polled
+
+		// For safe start when fault codes occur
+		if (mc_interface_get_fault() != FAULT_CODE_NONE) {
+			ms_without_power = 0;
+		}
+
+		if (app_is_output_disabled()) {
+			continue;
+		}
+
+		switch (config.ctrl_type) {
+			case PAS_CTRL_TYPE_NONE:
+				output = 0.0;
+				break;
+			case PAS_CTRL_TYPE_CADENCE:
+				// Map pedal rpm to assist level
+
+				// NOTE: If the limits are the same a numerical instability is approached, so in that case
+				// just use on/off control (which is what setting the limits to the same value essentially means).
+				if (config.pedal_rpm_end > (config.pedal_rpm_start + 1.0)) {
+					output = utils_map(pedal_rpm, config.pedal_rpm_start, config.pedal_rpm_end, 0.0, config.current_scaling * sub_scaling);
+					utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+				} else {
+					if (pedal_rpm > config.pedal_rpm_end) {
+						output = config.current_scaling * sub_scaling;
+					} else {
+						output = 0.0;
+					}
+				}
+				break;
+
+#ifdef HW_HAS_PAS_TORQUE_SENSOR
+			case PAS_CTRL_TYPE_TORQUE:
+			{
+				torque_ratio = hw_get_PAS_torque();
+				output = torque_ratio * config.current_scaling * sub_scaling;
+				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+			}
+			/* fall through */
+			case PAS_CTRL_TYPE_TORQUE_WITH_CADENCE_TIMEOUT:
+			{
+				// disable assistance if torque has been sensed for >5sec without any pedal movement. Prevents
+				// motor overtemps when the rider is just resting on the pedals
+				static float ms_without_cadence_or_torque = 0.0;
+				if(output == 0.0 || pedal_rpm > 0) {
+					ms_without_cadence_or_torque = 0.0;
+				} else {
+					ms_without_cadence_or_torque += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE) {
+						output = 0.0;
+					}
+				}
+			}
+#endif
+			default:
+				break;
+		}
+
+		// Apply ramping
+		static systime_t last_time = 0;
+		static float output_ramp = 0.0;
+		float ramp_time = fabsf(output) > fabsf(output_ramp) ? config.ramp_time_pos : config.ramp_time_neg;
+
+		if (ramp_time > 0.01) {
+			const float ramp_step = (float)ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0);
+			utils_step_towards(&output_ramp, output, ramp_step);
+			utils_truncate_number(&output_ramp, 0.0, config.current_scaling * sub_scaling);
+
+			last_time = chVTGetSystemTimeX();
+			output = output_ramp;
+		}
+
+		if (output < 0.001) {
+			ms_without_power += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+		}
+
+		// Safe start is enabled if the output has not been zero for long enough
+		if (ms_without_power < MIN_MS_WITHOUT_POWER) {
+			static int pulses_without_power_before = 0;
+			if (ms_without_power == pulses_without_power_before) {
+				ms_without_power = 0;
+			}
+			pulses_without_power_before = ms_without_power;
+			output_current_rel = 0.0;
+			continue;
+		}
+
+		// Reset timeout
+		timeout_reset();
+
+		if (primary_output == true) {
+			mc_interface_set_current_rel(output);
+		}
+		else {
+			output_current_rel = output;
+		}
+	}
 }
