@@ -56,8 +56,8 @@ static volatile bool is_running = false;
 static volatile float torque_ratio = 0.0;
 static volatile bool pas_one_magnet = false;
 static volatile int8_t reverse_pedaling = 0;
-static volatile uint32_t count_positive = 5;
-static volatile uint32_t count_negative = 5;
+static volatile uint32_t count_positive = 79;
+static volatile uint32_t count_negative = 79;
 
 /**
  * Configure and initialize PAS application
@@ -123,7 +123,7 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 bool app_pas_get_reverse_pedaling(void) {
-	if (reverse_pedaling > 90) { 
+	if (reverse_pedaling > 4) { 
 		return true;
 	} else { return false; }
 }
@@ -169,13 +169,21 @@ void pas_event_handler(void) {
 			
 		}
 		
-		if ((count > 1) & ((((count_positive - count_negative) / count_positive) * 100) > 40)) {
+		if ((count > 1) & ((((count_positive - count_negative) / count_positive) * 100) > 42)) {
 			reverse_pedaling = 0;
 			correct_direction_counter++;
 		} else {
-			reverse_pedaling++;
 			correct_direction_counter = 0;}
+			
+			
+			
+		if ((count > 1) & (correct_direction_counter == 0) & (reverse_pedaling < 20)) {
+				reverse_pedaling++;
+		}
 		
+		if  ((count > 1) & (reverse_pedaling > 4)) {
+			pedal_rpm = 0.0;
+		}
 		 
 		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
 		
@@ -188,7 +196,14 @@ void pas_event_handler(void) {
 			}
 			if (correct_direction_counter > 0) {
 				reverse_pedaling = 0;
-				pedal_rpm = 60.0 / period_filtered;
+				if (pedal_rpm < 3) {
+					pedal_rpm = 4;
+				} else if (pedal_rpm == 5) {	// pull the time to adjust the counters
+					pedal_rpm = 5;
+				} else if (pedal_rpm == 5) {		
+					pedal_rpm = 30.0 / period_filtered; 	//safe start
+				} else { 
+					pedal_rpm = 60.0 / period_filtered;}
 			}
 			inactivity_time = 0.0;
 			count = 0;
@@ -196,10 +211,10 @@ void pas_event_handler(void) {
 		else {
 			inactivity_time += 1.0 / (float)config.update_rate_hz;
 			//if no pedal activity, set RPM as zero
-			if(inactivity_time > (max_pulse_period / 1.5)) {
+			if(inactivity_time > (max_pulse_period / 1.7)) {
 				pedal_rpm = 0.0;
-				count_positive = 5;
-				count_negative = 5;
+				count_positive = 79;
+				count_negative = 79;
 				reverse_pedaling = 0;
 			}
 		}
