@@ -131,7 +131,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		}
 	
 	
-	float w = (float)GET_INPUT_VOLTAGE() * (can_current + mc_interface_get_tot_current_in_filtered() / 12;
+	float w = (float)GET_INPUT_VOLTAGE() * ((can_current + mc_interface_get_tot_current_in_filtered()) / 12;
 	if (w < 0)
 		w = 0;
 	if (w > 255)
