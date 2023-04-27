@@ -13,7 +13,8 @@
 #include "qmlui.h"
 #include "crc.h"
 #include "main.h"
-#include "conf_custom.h"
+#include "utils.h"
+#include "comm_can.h"
 
 #include <math.h>
 #include <string.h>
@@ -120,7 +121,17 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	}
 	
 	
-	float w = (float)GET_INPUT_VOLTAGE() * mc_interface_read_reset_avg_input_current() / 12;
+	int16_t can_current = 0;
+	
+	can_status_msg_4 *msg4 = comm_can_get_status_msg_4_index(0);
+		if (msg4->id >= 0 && UTILS_AGE_S(msg4->rx_time) < 0.9) {
+				can_current = msg4->current_in;
+		} else {
+				can_current = 0;
+		}
+	
+	
+	float w = (float)GET_INPUT_VOLTAGE() * (can_current + mc_interface_get_tot_current_in_filtered() / 12;
 	if (w < 0)
 		w = 0;
 	if (w > 255)
@@ -147,7 +158,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	sb[3] = (uint8_t)(pms/256);	//b3, b4: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
 	sb[4] = pms - sb[3]*256;
 	
-	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info", 0x21: "6info", 0x22: "1info", 0x23: "2info", 0x24: "3info", 0x25: "0info", 0x26: "4info", 0x28: "0info"
+	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info  - Comunication line gault - all screen", 0x21: "6info - Motor or controller short circuit fault - all screen", 0x22: "1info -throtle fault - all screen", 0x23: "2info - Comunication line gault - all scren", 0x24: "3info - motor position sensor fault - all screen", 0x25: "0info - Comunication line gault - all screen", 0x26: "4info - Comunication line gault - all screen", 0x28: "0info - Comunication line gault - all screen"
 	sb[6] = 0;
 	
 	//b7: moving animation ()
