@@ -1,208 +1,396 @@
-#include "commands.h"
+/*
+	Copyright 2016 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2020 Marcos Chaparro	mchaparro@powerdesigns.ca
+
+	This file is part of the VESC firmware.
+
+	The VESC firmware is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The VESC firmware is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "app.h"
+
 #include "ch.h"
 #include "hal.h"
-#include "mc_interface.h"
 #include "stm32f4xx_conf.h"
-#include "buffer.h"
-#include "terminal.h"
-#include "hw.h"
-#include "app.h"
+#include "mc_interface.h"
 #include "timeout.h"
-#include "utils_sys.h"
-#include "packet.h"
-#include "qmlui.h"
-#include "crc.h"
-#include "main.h"
-#include "utils.h"
+#include "utils_math.h"
 #include "comm_can.h"
-
+#include "hw.h"
 #include <math.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdio.h>
 
+// Settings
+#define PEDAL_INPUT_TIMEOUT				0.2
+#define MAX_MS_WITHOUT_CADENCE			5000
+#define MIN_MS_WITHOUT_POWER			500
+#define FILTER_SAMPLES					5
+#define RPM_FILTER_SAMPLES				8
 
-extern void app_uartcomm_send_raw_packet(unsigned char *data, unsigned int len, UART_PORT port_number);
+// Threads
+static THD_FUNCTION(pas_thread, arg);
+static THD_WORKING_AREA(pas_thread_wa, 512);
 
-#define LCD3_REPLY_PACKET_SIZE	12
+// Private variables
+static volatile pas_config config;
+static volatile float sub_scaling = 1.0;
+static volatile float output_current_rel = 0.0;
+static volatile float ms_without_power = 0.0;
+static volatile float max_pulse_period = 0.0;
+static volatile float min_pedal_period = 0.0;
+static volatile float direction_conf = 0.0;
+static volatile float pedal_rpm = 0;
+static volatile bool primary_output = false;
+static volatile bool stop_now = true;
+static volatile bool is_running = false;
+static volatile float torque_ratio = 0.0;
+static volatile bool pas_one_magnet = false;
+static volatile int8_t reverse_pedaling = 0;
+static volatile uint32_t count_positive = 79;
+static volatile uint32_t count_negative = 79;
 
-#define MOVING_ANIMATION_THROTTLE	(1 << 1)
-#define MOVING_ANIMATION_CRUISE		(1 << 3)
-#define MOVING_ANIMATION_ASSIST		(1 << 4)
-#define MOVING_ANIMATION_BRAKE		(1 << 5)
+/**
+ * Configure and initialize PAS application
+ *
+ * @param conf
+ * App config
+ */
+void app_pas_configure(pas_config *conf) {
+	config = *conf;
+	ms_without_power = 0.0;
+	output_current_rel = 0.0;
 
+	// a period longer than this should immediately reduce power to zero
+	max_pulse_period = 1.0 / ((config.pedal_rpm_start / 60.0) * config.magnets) * 1.2;
 
-void lcd3_process_packet(unsigned char *data, unsigned int len,
-		void(*reply_func)(unsigned char *data, unsigned int len))
-{
-	
-	(void)len;
-	(void)reply_func;
-	
-	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
-	
+	// if pedal spins at x3 the end rpm, assume its beyond limits
+	min_pedal_period = 1.0 / ((config.pedal_rpm_end * 3.0 / 60.0));
 
-
-
-	
-	uint8_t lcd_pas_mode = data[1];  //speedbutton
-	bool fixed_throttle_level = (data[4] >> 4) & 1;  //p4
-	bool temp_mode =  (data[10] >> 2) & 1;  //c13
-	bool l3 =  (data[10] >> 0) & 1;
-	bool pas_one_magnet = (data[11] >> 6) & 1; //l1
-	
-	if(pas_one_magnet) {
-	 app_pas_set_one_magnet(true);
-	} else if (pas_one_magnet == 0) {
-	 app_pas_set_one_magnet(false);
-	}
-	
-	float current_scale = 0.0;
-	
-	if (lcd_pas_mode == 1)
-		current_scale = 0.1;
-	else if (lcd_pas_mode == 2)
-		current_scale = 0.2;
-	else if (lcd_pas_mode == 3)
-		current_scale = 0.35;
-	else if (lcd_pas_mode == 4)
-		current_scale = 0.65;
-	else if (lcd_pas_mode == 5)
-		current_scale = 1;
-		
-		
-	
-	if(fixed_throttle_level == 0) {
-		mcconf->l_current_max_scale = 1.0;
-		app_pas_set_current_sub_scaling(current_scale);
-	} else {
-		mcconf->l_current_max_scale = current_scale;
-	}
-	
-	if((current_scale == 0.0) && l3) {
-		mcconf->l_current_max_scale = current_scale;
-	}
-	
-	
-	uint8_t sb[LCD3_REPLY_PACKET_SIZE];
-	
-	
-	float ms = (float)(mc_interface_get_speed()* 3600.0 / 1000.0); //speed vesc to km.h
-	
-	
-	uint16_t pms = 0;
-	if (ms < 2){
-	 pms = 0;
-	} else {
-	 pms = (7360 / ms);
-	}
-	
-	
-	uint8_t batteryLevel;
-	uint8_t batFlashing = 0;
-
-	float l = mc_interface_get_battery_level(NULL);
-	
-	
-	
-	if (l > 0.7)
-		batteryLevel = 4;
-	else if (l > 0.4)
-		batteryLevel = 3;
-	else if (l > 0.2)
-		batteryLevel = 2;
-	else if (l > 0.1)
-		batteryLevel = 1;
-	else
-	{
-		batteryLevel = 0;
-		if (l <= 0)
-			batFlashing = 1;
-	}
-	
-	
-	int16_t can_current = 0;
-	
-	can_status_msg_4 *msg4 = comm_can_get_status_msg_4_index(0);
-		if (msg4->id >= 0 && UTILS_AGE_S(msg4->rx_time) < 0.9) {
-				can_current = msg4->current_in;
-		} else {
-				can_current = 0;
-		}
-	
-	
-	float w = (float)GET_INPUT_VOLTAGE() * (can_current + mc_interface_get_tot_current_in_filtered() / 12;
-	if (w < 0)
-		w = 0;
-	if (w > 255)
-		w = 255;
-	
-	sb[0] = 0x41;
-	
-	
-	int8_t temp;
-	if(temp_mode) {
-		temp = (int8_t)mc_interface_temp_motor_filtered();	
-	} else {
-		temp = (int8_t)mc_interface_temp_fet_filtered();
-	}
-	
-	//b1: battery level:
-	// bit 0: border flashing,
-	// bit 1: animated charging,
-	// bit 3-5: level, (0-4)
-	sb[1] = (batteryLevel << 2) | batFlashing;
-	
-	sb[2] = 0x30; //battery voltage
-	
-	sb[3] = (uint8_t)(pms/256);	//b3, b4: speed, wheel rotation period, ms; period(ms)=B3*256+B4;
-	sb[4] = pms - sb[3]*256;
-	
-	sb[5] = 0;	//b5: B5 error info display: 0x20: "0info  - Comunication line gault - all screen", 0x21: "6info - Motor or controller short circuit fault - all screen", 0x22: "1info -throtle fault - all screen", 0x23: "2info - Comunication line gault - all scren", 0x24: "3info - motor position sensor fault - all screen", 0x25: "0info - Comunication line gault - all screen", 0x26: "4info - Comunication line gault - all screen", 0x28: "0info - Comunication line gault - all screen"
-	sb[6] = 0;
-	
-	//b7: moving animation ()
-	// bit 0: -
-	// bit 1: throttle
-	// bit 2: -
-	// bit 3: cruise
-	// bit 4: assist
-	// bit 5: brake
-	// bit 6: -
-	// bit 7: -
-	sb[7] = 
-		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
-		(app_pas_get_reverse_pedaling() ? MOVING_ANIMATION_CRUISE : 0) |
-		((app_pas_get_pedal_rpm() > 11) ? MOVING_ANIMATION_ASSIST : 0) |
-		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
-	
-	sb[8] = w;	//b8: power in 13 wt increments (48V version of the controller)
-
-	sb[9] = (int8_t)(temp - 15.0f);	//b9: motor temperature +15
-	sb[10] = 0;	//
-	sb[11] = 0;	//
-	
-	uint8_t crc = 0;
-	for (int n = 1; n < LCD3_REPLY_PACKET_SIZE; n++)
-		crc ^= sb[n];
-	
-	sb[6] = crc;
-	
-	app_uartcomm_send_raw_packet(sb,len,UART_PORT_COMM_HEADER);
+	(config.invert_pedal_direction) ? (direction_conf = -1.0) : (direction_conf = 1.0);
 }
 
-#define LCD3_RX_PACKET_SIZE	13
-static uint8_t buffer[LCD3_RX_PACKET_SIZE];
+/**
+ * Start PAS thread
+ *
+ * @param is_primary_output
+ * True when PAS app takes direct control of the current target,
+ * false when PAS app shares control with the ADC app for current command
+ */
+void app_pas_start(bool is_primary_output) {
+	stop_now = false;
+	chThdCreateStatic(pas_thread_wa, sizeof(pas_thread_wa), NORMALPRIO, pas_thread, NULL);
 
-void lcd3_process_byte(uint8_t rx_data, PACKET_STATE_t *state)
-{
-	(void)state;
+	primary_output = is_primary_output;
+}
+
+bool app_pas_is_running(void) {
+	return is_running;
+}
+
+void app_pas_stop(void) {
+	stop_now = true;
+	while (is_running) {
+		chThdSleepMilliseconds(1);
+	}
+
+	if (primary_output == true) {
+		mc_interface_set_current_rel(0.0);
+	}
+	else {
+		output_current_rel = 0.0;
+	}
+}
+
+void app_pas_set_current_sub_scaling(float current_sub_scaling) {
+	sub_scaling = current_sub_scaling;
+}
+
+float app_pas_get_current_target_rel(void) {
+	return output_current_rel;
+}
+
+float app_pas_get_pedal_rpm(void) {
+	return pedal_rpm;
+}
+bool app_pas_get_reverse_pedaling(void) {
+	if (reverse_pedaling > 4) { 
+		return true;
+	} else { return false; }
+}
+
+void app_pas_set_one_magnet(bool use_one_magnet) {
+	pas_one_magnet = use_one_magnet;
+}
+
+void pas_event_handler(void) {
+#ifdef HW_PAS1_PORT
+	const int8_t QEM[] = {0,-1,1,2,1,0,2,-1,-1,2,0,1,2,1,-1,0}; // Quadrature Encoder Matrix
+	int8_t direction_qem;
+	uint8_t new_state;
+	static uint8_t old_state = 0;
+	static float old_timestamp = 0;
+	static float inactivity_time = 0;
+	static float period_filtered = 0;
+	static int32_t correct_direction_counter = 0;
+	static uint8_t count = 0;
+
+	if(pas_one_magnet){
 	
-	memmove(buffer, &buffer[1], LCD3_RX_PACKET_SIZE - 1);
-	buffer[LCD3_RX_PACKET_SIZE - 1] = rx_data;
+		uint8_t	pas_level = palReadPad(GPIOA, 13);
+		
+		new_state = pas_level;
+		
+		if (new_state != old_state) {
+		  	count++;}
+		  	
+		old_state = new_state;
+		
+		
+		if (config.invert_pedal_direction) {
+			if (new_state) {
+			count_negative++;
+			} else {
+			count_positive++;}
+		} else { 
+			if (new_state) {
+			count_positive++;
+			} else {
+			count_negative++;}
+			
+		}
+		
+		if ((count > 1) & ((((count_positive - count_negative) / count_positive) * 100) > 42)) {
+			reverse_pedaling = 0;
+			correct_direction_counter++;
+		} else {
+			correct_direction_counter = 0;}
+			
+			
+			
+		if ((count > 1) & (correct_direction_counter == 0) & (reverse_pedaling < 20)) {
+				reverse_pedaling++;
+		}
+		
+		if  ((count > 1) & (reverse_pedaling > 4)) {
+			pedal_rpm = 0.0;
+		}
+		 
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+		
+		if (count > 1) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			if (correct_direction_counter > 0) {
+				reverse_pedaling = 0;
+				if (pedal_rpm < 3) {
+					pedal_rpm = 4;
+				} else if (pedal_rpm == 5) {	// pull the time to adjust the counters
+					pedal_rpm = 5;
+				} else if (pedal_rpm == 5) {		
+					pedal_rpm = 30.0 / period_filtered; 	//safe start
+				} else { 
+					pedal_rpm = 60.0 / period_filtered;}
+			}
+			inactivity_time = 0.0;
+			count = 0;
+		}
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > (max_pulse_period / 1.7)) {
+				pedal_rpm = 0.0;
+				count_positive = 79;
+				count_negative = 79;
+				reverse_pedaling = 0;
+			}
+		}
 	
-	if (buffer[12] == 0x0e)
-	{
-		lcd3_process_packet(buffer, LCD3_RX_PACKET_SIZE, UART_PORT_COMM_HEADER);
+	} else {
+	
+		uint8_t PAS1_level = palReadPad(GPIOA, 13);
+		uint8_t PAS2_level = palReadPad(GPIOA, 14);
+
+		new_state = PAS2_level * 2 + PAS1_level;
+		direction_qem = (float) QEM[old_state * 4 + new_state];
+		old_state = new_state;
+
+		// Require several quadrature events in the right direction to prevent vibrations from
+		// engging PAS
+		int8_t direction = (direction_conf * direction_qem);
+		
+		switch(direction) {
+			case 1: correct_direction_counter++; break;
+			case -1:correct_direction_counter = 0; break;
+		}
+		
+		const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+
+		// sensors are poorly placed, so use only one rising edge as reference
+		if( (new_state == 3) && (correct_direction_counter >= 4) ) {
+			float period = (timestamp - old_timestamp) * (float)config.magnets;
+			old_timestamp = timestamp;
+
+			UTILS_LP_FAST(period_filtered, period, 1.0);
+
+			if(period_filtered < min_pedal_period) { //can't be that short, abort
+				return;
+			}
+			pedal_rpm = 60.0 / period_filtered;
+			pedal_rpm *= (direction_conf * (float)direction_qem);
+			inactivity_time = 0.0;
+		}
+		else {
+			inactivity_time += 1.0 / (float)config.update_rate_hz;
+
+			//if no pedal activity, set RPM as zero
+			if(inactivity_time > max_pulse_period) {
+				pedal_rpm = 0.0;
+			}
+		}
+	}
+#endif
+}
+
+static THD_FUNCTION(pas_thread, arg) {
+	(void)arg;
+
+	float output = 0;
+	chRegSetThreadName("APP_PAS");
+
+#ifdef HW_PAS1_PORT
+	palSetPadMode(GPIOA, 13, PAL_MODE_INPUT_PULLUP);
+	if(pas_one_magnet == 0){
+	palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLUP);
+	}
+#endif
+
+	is_running = true;
+
+	for(;;) {
+		// Sleep for a time according to the specified rate
+		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+
+		// At least one tick should be slept to not block the other threads
+		if (sleep_time == 0) {
+			sleep_time = 1;
+		}
+		chThdSleep(sleep_time);
+
+		if (stop_now) {
+			is_running = false;
+			return;
+		}
+
+		pas_event_handler();	// this could happen inside an ISR instead of being polled
+
+		// For safe start when fault codes occur
+		if (mc_interface_get_fault() != FAULT_CODE_NONE) {
+			ms_without_power = 0;
+		}
+
+		if (app_is_output_disabled()) {
+			continue;
+		}
+
+		switch (config.ctrl_type) {
+			case PAS_CTRL_TYPE_NONE:
+				output = 0.0;
+				break;
+			case PAS_CTRL_TYPE_CADENCE:
+				// Map pedal rpm to assist level
+
+				// NOTE: If the limits are the same a numerical instability is approached, so in that case
+				// just use on/off control (which is what setting the limits to the same value essentially means).
+				if (config.pedal_rpm_end > (config.pedal_rpm_start + 1.0)) {
+					output = utils_map(pedal_rpm, config.pedal_rpm_start, config.pedal_rpm_end, 0.0, config.current_scaling * sub_scaling);
+					utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+				} else {
+					if (pedal_rpm > config.pedal_rpm_end) {
+						output = config.current_scaling * sub_scaling;
+					} else {
+						output = 0.0;
+					}
+				}
+				break;
+
+#ifdef HW_HAS_PAS_TORQUE_SENSOR
+			case PAS_CTRL_TYPE_TORQUE:
+			{
+				torque_ratio = hw_get_PAS_torque();
+				output = torque_ratio * config.current_scaling * sub_scaling;
+				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+			}
+			/* fall through */
+			case PAS_CTRL_TYPE_TORQUE_WITH_CADENCE_TIMEOUT:
+			{
+				// disable assistance if torque has been sensed for >5sec without any pedal movement. Prevents
+				// motor overtemps when the rider is just resting on the pedals
+				static float ms_without_cadence_or_torque = 0.0;
+				if(output == 0.0 || pedal_rpm > 0) {
+					ms_without_cadence_or_torque = 0.0;
+				} else {
+					ms_without_cadence_or_torque += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE) {
+						output = 0.0;
+					}
+				}
+			}
+#endif
+			default:
+				break;
+		}
+
+		// Apply ramping
+		static systime_t last_time = 0;
+		static float output_ramp = 0.0;
+		float ramp_time = fabsf(output) > fabsf(output_ramp) ? config.ramp_time_pos : config.ramp_time_neg;
+
+		if (ramp_time > 0.01) {
+			const float ramp_step = (float)ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0);
+			utils_step_towards(&output_ramp, output, ramp_step);
+			utils_truncate_number(&output_ramp, 0.0, config.current_scaling * sub_scaling);
+
+			last_time = chVTGetSystemTimeX();
+			output = output_ramp;
+		}
+
+		if (output < 0.001) {
+			ms_without_power += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+		}
+
+		// Safe start is enabled if the output has not been zero for long enough
+		if (ms_without_power < MIN_MS_WITHOUT_POWER) {
+			static int pulses_without_power_before = 0;
+			if (ms_without_power == pulses_without_power_before) {
+				ms_without_power = 0;
+			}
+			pulses_without_power_before = ms_without_power;
+			output_current_rel = 0.0;
+			continue;
+		}
+
+		// Reset timeout
+		timeout_reset();
+
+		if (primary_output == true) {
+			mc_interface_set_current_rel(output);
+		}
+		else {
+			output_current_rel = output;
+		}
 	}
 }
