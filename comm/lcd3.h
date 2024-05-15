@@ -20,9 +20,17 @@
 #ifndef LCD3_H_
 #define LCD3_H_
 
+
+//is reducer motor difined speed external hall sensor
+#define HW_HAS_WHEEL_SPEED_SENSOR
+
 #include "datatypes.h"
 
 void lcd3_process_packet(unsigned char *data, unsigned int len,
 		void(*reply_func)(unsigned char *data, unsigned int len));
+float hw_get_speed(void);
+void hw_update_speed_sensor(void);
+float hw_get_distance(void);
+float hw_get_distance_abs(void);
 
 #endif /* LCD3_H_ */
