@@ -16,7 +16,7 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+#include "lcd3.h"
 #include "mc_interface.h"
 #include "mcpwm.h"
 #include "mcpwm_foc.h"
