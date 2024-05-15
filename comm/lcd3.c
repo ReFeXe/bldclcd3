@@ -15,6 +15,7 @@
 #include "main.h"
 #include "utils.h"
 #include "comm_can.h"
+#include "servo_dec.h"
 
 #include <math.h>
 #include <string.h>
@@ -40,16 +41,32 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	(void)reply_func;
 	
 	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
-	
 
 
-
-	
-	uint8_t lcd_pas_mode = data[1];  //speedbutton
+	uint8_t lcd_pas_mode = data[1] & 7;  //speedbutton. Ignore first 5 bit
 	bool fixed_throttle_level = (data[4] >> 4) & 1;  //p4
 	bool temp_mode =  (data[10] >> 2) & 1;  //c13
-	bool l3 =  (data[10] >> 0) & 1;
+	bool l3 =  (data[10] >> 0) & 1; //l3
 	bool pas_one_magnet = (data[11] >> 6) & 1; //l1
+	bool light_kt_on = (data[1] >> 7) & 1; //Lights
+	//bool tmp = (data[6] >> 0) & 1; //c2 temporal not use
+	
+#ifndef HW_HAS_WHEEL_SPEED_SENSOR
+		bool servo_stop;
+		bool read_servo;
+		if (servodec_is_running()) {
+		servodec_stop();
+		servo_stop = 0;
+		read_servo = 0;
+		} else {
+		servo_stop = 1;
+		}
+		if (servo_stop && !read_servo) {
+		palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN, PAL_MODE_INPUT_PULLUP);
+		read_servo = 1;
+		}	
+		 
+#endif 
 	
 	if(pas_one_magnet) {
 	 app_pas_set_one_magnet(true);
@@ -60,13 +77,13 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	float current_scale = 0.0;
 	
 	if (lcd_pas_mode == 1)
-		current_scale = 0.1;
+		current_scale = 0.15;
 	else if (lcd_pas_mode == 2)
-		current_scale = 0.2;
+		current_scale = 0.25;
 	else if (lcd_pas_mode == 3)
-		current_scale = 0.35;
+		current_scale = 0.40;
 	else if (lcd_pas_mode == 4)
-		current_scale = 0.65;
+		current_scale = 0.67;
 	else if (lcd_pas_mode == 5)
 		current_scale = 1;
 		
@@ -131,7 +148,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		}
 	
 	
-	float w = (float)GET_INPUT_VOLTAGE() * ((can_current + mc_interface_get_tot_current_in_filtered()) / 12;
+	float w = (float)GET_INPUT_VOLTAGE() * (can_current + mc_interface_get_tot_current_in_filtered()) / 12;
 	if (w < 0)
 		w = 0;
 	if (w > 255)
@@ -205,4 +222,57 @@ void lcd3_process_byte(uint8_t rx_data, PACKET_STATE_t *state)
 	{
 		lcd3_process_packet(buffer, LCD3_RX_PACKET_SIZE, UART_PORT_COMM_HEADER);
 	}
+}
+
+
+
+volatile float wheel_rpm_filtered = 0;
+volatile float trip_odometer = 1.0;
+
+void hw_update_speed_sensor(void) {
+	static float wheel_rpm = 0;
+	static uint8_t sensor_state = 0;
+	static uint8_t sensor_state_old = 0;
+	static float last_sensor_event_time = 0;
+	float current_time = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+
+	sensor_state = palReadPad(HW_ICU_GPIO, HW_ICU_PIN);
+
+	if(sensor_state == 0 && sensor_state_old == 1 ) {
+		float revolution_duration = current_time - last_sensor_event_time;
+
+		if (revolution_duration > 0.09) {	//ignore periods <110ms, which is about 83km/h
+			last_sensor_event_time = current_time;
+			wheel_rpm = 60.0 / revolution_duration;
+			UTILS_LP_FAST(wheel_rpm_filtered, (float)wheel_rpm, 0.5);
+
+			// For some reason a race condition on startup crashes the OS if this is executed too soon.
+			// So don't track odometer for the first 4 seconds
+			if(current_time > 4.0) {
+				trip_odometer += mc_interface_get_configuration()->si_wheel_diameter * M_PI;
+			}
+		}
+	} else {
+		// After 3 seconds without sensor signal, set RPM as zero
+		if ( (current_time - last_sensor_event_time) > 3.0) {
+			wheel_rpm_filtered = 0.0;
+		}
+	}
+	sensor_state_old = sensor_state;
+}
+
+/* Get speed in m/s */
+float hw_get_speed(void) {
+	const volatile mc_configuration *conf = mc_interface_get_configuration();
+	float speed = wheel_rpm_filtered * conf->si_wheel_diameter * M_PI / 60.0;
+	return speed;
+}
+
+/* Get trip distance in meters */
+float hw_get_distance(void) {
+	return trip_odometer;
+}
+
+float hw_get_distance_abs(void) {
+	return trip_odometer;
 }
