@@ -17,7 +17,7 @@ Optional: make arm_sdk_install
 after flashing, change UART baudrate 9600
 
 
-BY BY UART, LCD3 Active PAS and ADC + PAS, on it PAS pin's change to SWDIO and SWCLK
+BY BY UART, LCD3 Active PAS and ADC + PAS, on it PAS pin's change to SWDIO and SWCLK!!!
 
 In UBOX, it is loaded only into the first controller
 
@@ -47,6 +47,7 @@ C13 = 0 - ESC Temp, 1 - Motor temp;
 P4 = 0 - Fixed throttle (The speed buttons control only the PAS),  1 - The speed buttons control the total power
 
 L1 - PAS Sensor one magnet. (KT one hall sensor). 1 Enable. 0 Disable (Default VESC QEM sensor).
+When using a single PAS (one magnet), the connection is made to SWDIO (SWCLK will supply 3v when the backlight on the display is turned on (long press the up button)this can be used to control light through a transistor or an optical pair)
 
 L3 - setting the power to 0 at 0 speed throttle and pas. Default - 1
 
