@@ -67,6 +67,15 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		}	
 		 
 #endif 
+
+
+	if(pas_one_magnet){
+		if(light_kt_on) {
+		palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLUP); 
+		} else {
+		palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLDOWN);
+		}
+	}
 	
 	if(pas_one_magnet) {
 	 app_pas_set_one_magnet(true);
@@ -77,13 +86,13 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	float current_scale = 0.0;
 	
 	if (lcd_pas_mode == 1)
-		current_scale = 0.15;
+		current_scale = 0.20;
 	else if (lcd_pas_mode == 2)
-		current_scale = 0.25;
+		current_scale = 0.35;
 	else if (lcd_pas_mode == 3)
-		current_scale = 0.40;
+		current_scale = 0.55;
 	else if (lcd_pas_mode == 4)
-		current_scale = 0.67;
+		current_scale = 0.75;
 	else if (lcd_pas_mode == 5)
 		current_scale = 1;
 		
@@ -189,7 +198,8 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	// bit 7: -
 	sb[7] = 
 		((app_adc_get_decoded_level() > 0) ? MOVING_ANIMATION_THROTTLE : 0) |
-		(app_pas_get_reverse_pedaling() ? MOVING_ANIMATION_CRUISE : 0) |
+		//(app_pas_get_reverse_pedaling() ? MOVING_ANIMATION_CRUISE : 0) |
+		(read_servo = 1 ? MOVING_ANIMATION_CRUISE : 0) |
 		((app_pas_get_pedal_rpm() > 11) ? MOVING_ANIMATION_ASSIST : 0) |
 		((app_adc_get_decoded_level2() > 0) ? MOVING_ANIMATION_BRAKE : 0);
 	
