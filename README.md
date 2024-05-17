@@ -50,3 +50,15 @@ L1 - PAS Sensor one magnet. (KT one hall sensor). 1 Enable. 0 Disable (Default V
 
 L3 - setting the power to 0 at 0 speed throttle and pas. Default - 1
 
+
+if you use a reducer (gear) motor wheel, and you need use an external speed sensor. 
+This will allow you to track the speed without rotating the motor.
+On the reducer motor, e-bike, as a rule, there is a white wire on which there is a hall sensor powered by the main sensors.
+To use it, in this firmware it is possible to receive this data using the 'servo' pin.
+
+To compile the firmware with the ability to use an external speed sensor, a string is required.
+#define HW_HAS_WHEEL_SPEED_SENSOR
+to file lcd3.h
+
+If you are not using an external speed sensor, you need to delete this line.
+
