@@ -66,6 +66,12 @@ static volatile bool buttons_detached = false;
 static volatile bool rev_override = false;
 static volatile bool cc_override = false;
 
+float op_scaling = 1;
+void app_adc_set_op_scaling(float scaling) {
+	op_scaling = scaling;
+}
+
+
 void app_adc_configure(adc_config *conf) {
 	if (!buttons_detached && (((conf->buttons >> 0) & 1) || CTRL_USES_BUTTON(conf->ctrl_type))) {
 		if (use_rx_tx_as_buttons) {
@@ -396,7 +402,7 @@ static THD_FUNCTION(adc_thread, arg) {
 				if (app_pas_is_running()) {
 					pwr = utils_max_abs(pwr, app_pas_get_current_target_rel());
 				}
-				current_rel = pwr;
+				current_rel = (pwr * op_scaling);
 			} else {
 				current_rel = fabsf(pwr);
 				current_mode_brake = true;
