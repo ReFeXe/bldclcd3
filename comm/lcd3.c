@@ -103,6 +103,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		app_pas_set_current_sub_scaling(current_scale);
 	} else {
 		if(adc_scaling) {
+		mcconf->l_current_max_scale = 1.0;
 		app_adc_set_op_scaling(current_scale);
 		} else {
 		mcconf->l_current_max_scale = current_scale;
