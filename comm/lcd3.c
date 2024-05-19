@@ -49,7 +49,7 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 	bool l3 =  (data[10] >> 0) & 1; //l3
 	bool pas_one_magnet = (data[11] >> 6) & 1; //l1
 	bool light_kt_on = (data[1] >> 7) & 1; //Lights
-	//bool tmp = (data[6] >> 0) & 1; //c2 temporal not use
+	bool adc_scaling = (data[6] >> 0) & 1; //c2
 	
 #ifndef HW_HAS_WHEEL_SPEED_SENSOR
 		bool servo_stop;
@@ -71,9 +71,9 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 
 	if(pas_one_magnet){
 		if(light_kt_on) {
-		palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLUP); 
+		palSetPadMode(GPIOA, 14, PAL_HIGH); 
 		} else {
-		palSetPadMode(GPIOA, 14, PAL_MODE_INPUT_PULLDOWN);
+		palSetPadMode(GPIOA, 14, PAL_LOW);
 		}
 	}
 	
@@ -102,11 +102,17 @@ void lcd3_process_packet(unsigned char *data, unsigned int len,
 		mcconf->l_current_max_scale = 1.0;
 		app_pas_set_current_sub_scaling(current_scale);
 	} else {
+		if(adc_scaling) {
+		app_adc_set_op_scaling(current_scale) } else {
 		mcconf->l_current_max_scale = current_scale;
+		}
 	}
 	
 	if((current_scale == 0.0) && l3) {
+		if(adc_scaling) {
+		app_adc_set_op_scaling(current_scale) } else {
 		mcconf->l_current_max_scale = current_scale;
+		}
 	}
 	
 	
