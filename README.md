@@ -51,6 +51,7 @@ When using a single PAS (one magnet), the connection is made to SWDIO (SWCLK wil
 
 L3 - setting the power to 0 at 0 speed throttle and pas. Default - 1
 
+C2 - ADC Scaling. Controls the output power at the ADC level. (By default, at the motor level). It is relevant when using two CAN motor wheels
 
 if you use a reducer (gear) motor wheel, and you need use an external speed sensor. 
 This will allow you to track the speed without rotating the motor.
