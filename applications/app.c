@@ -144,12 +144,12 @@ void app_set_configuration(app_configuration *conf) {
 			app_pas_start(false);
 			break;
 
-		//case APP_NRF:
-			//if (!conf_general_permanent_nrf_found) {
-				//nrf_driver_init();
-				//rfhelp_restart();
-			//}
-			//break;
+		case APP_NRF:
+			if (!conf_general_permanent_nrf_found) {
+				nrf_driver_init();
+				rfhelp_restart();
+			}
+			break;
 
 		case APP_CUSTOM:
 #ifdef APP_CUSTOM_TO_USE
@@ -175,7 +175,7 @@ void app_set_configuration(app_configuration *conf) {
 	app_custom_configure(&appconf);
 #endif
 
-//	rfhelp_update_conf(&appconf.app_nrf_conf);
+	rfhelp_update_conf(&appconf.app_nrf_conf);
 }
 
 /**
